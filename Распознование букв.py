@@ -1,19 +1,16 @@
 import os
-#os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
-#from os import listdir
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 from PIL import Image
 import cv2
 import numpy as np
-import matplotlib.pyplot as plt
-from tensorflow.keras.datasets import mnist         
+import matplotlib.pyplot as plt        
 from tensorflow import keras
 from tensorflow.keras.layers import Dense, Flatten
 import tensorflow as tf
 import shutil
 from skimage import transform as tr
 import random
-alf = "АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ"
-
+alf = "АИЙКЛМНОПРСБТУФХЦЧШЩЪЫВЬЭЮЯГДЕЁЖЗ"
 # ищет минимальное количество изображений одной буквы
 # и выравнивает в остальных папках колличество изображений
 def balancing(path_train = "./Train/"):  
@@ -108,16 +105,16 @@ def create_model(TRAINING_DIR = "./Train", VALIDATION_DIR = "./Validation"):
     model.compile(optimizer='adam',
                   loss='sparse_categorical_crossentropy',
                   metrics=['accuracy'])
-    model.summary()
-    model.fit_generator(train_generator,
+    #model.summary()
+    model.fit(train_generator,
               epochs=2,
               verbose=2,
               validation_data=validation_generator)
     try:
-        shutil.rmtree('model_bkv4')
+        shutil.rmtree('model_bkv5')
     except:
         pass
-    model.save('model_bkv4')
+    model.save('model_bkv5')
 
 # создаёт базу для обучения
 def create_dataset(path_train = "./Train/", path_to_default_image = "./Cyrillic/"):
@@ -147,24 +144,69 @@ def create_dataset(path_train = "./Train/", path_to_default_image = "./Cyrillic/
     balancing()
     create_validation()
 
+#Перевод изображения в чб
+def convert(path_to_img):
+    color_image = Image.open(path_to_img)
+    bw = color_image.convert('L')
+    
+
+
 # распознование
 def predicting(path_to_image):
     image = keras.preprocessing.image
     model = keras.models.load_model('model_bkv4')
     
-    img = image.load_img(path_to_image, target_size=(278, 278))
+    img = image.load_img(path_to_image,
+                         target_size=(278, 278))
+    thresh = 200
+    fn = lambda x : 255 if x > thresh else 0
+    img = img.convert('L').point(fn, mode='1')
+    img = img.convert('RGB')
     x = image.img_to_array(img)
     x = np.expand_dims(x, axis=0)
     images = np.vstack([x])
     classes = model.predict(images, batch_size=1)
     result = int(np.argmax(classes))
-    return (classes, alf[result])
+    return alf[result]
+
+def letters_extract(image_file: str, out_size=278):
+    img = cv2.imread(image_file)
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    ret, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY)
+    img_erode = cv2.erode(thresh, np.ones((3, 3), np.uint8), iterations=1)
+
+    contours, hierarchy = cv2.findContours(img_erode, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
+
+    output = img.copy()
+
+    letters = []
+    for idx, contour in enumerate(contours):
+        (x, y, w, h) = cv2.boundingRect(contour)
+        if hierarchy[0][idx][3] == 0:
+            cv2.rectangle(output, (x, y), (x + w, y + h), (70, 0, 0), 1)
+            letter_crop = gray[y:y + h, x:x + w]
+
+            size_max = max(w, h)
+            letter_square = 255 * np.ones(shape=[size_max, size_max], dtype=np.uint8)
+            if w > h:
+
+                y_pos = size_max//2 - h//2
+                letter_square[y_pos:y_pos + h, 0:w] = letter_crop
+            elif w < h:
+
+                x_pos = size_max//2 - w//2
+                letter_square[0:h, x_pos:x_pos + w] = letter_crop
+            else:
+                letter_square = letter_crop
+
+            letters.append((x, w, cv2.resize(letter_square, (out_size, out_size), interpolation=cv2.INTER_AREA)))
+
+    letters.sort(key=lambda x: x[0], reverse=False)
+    for i in range(len(letters)):
+        cv2.imwrite('lettter'+str(i), letters[i][2]) 
+
+
+
 
 if __name__ == '__main__':
-##    create_dataset()
-##    create_model()
-
-    i = "4"
-    for j in os.listdir(r"C:\Users\alexe\OneDrive\Рабочий стол\Распознование букв\Validation\\"+i):
-        print(predicting(r"C:\Users\alexe\OneDrive\Рабочий стол\Распознование букв\Validation\\"+i
-                         +"\\"+j))
+    letters_extract(r"3.jpg")
